@@ -28,12 +28,29 @@ def _parse_header(pac_contents):
     remaining = pac_contents[len(PAC_PREFIX):]
 
     (data_start, _, file_count), remaining = _unpack_from("III", remaining)
-    (_, string_size, __, ___), remaining = _unpack_from("IIII", remaining)
+    (_, meta_chunk_size, __, ___), remaining = _unpack_from("IIII", remaining)
 
-    return data_start, string_size, file_count, remaining
+    return data_start, meta_chunk_size, file_count, remaining
 
 
-def _enumerate_files(pac_contents, file_count, string_size):
+def _get_format(meta_chunk_size):
+    """
+    The chunk size is seemingly not just the length of data allocated to file names.
+    The file info format seems to be 2*`meta_chunk_size` (chunk size comes from the header)
+    where the first half is the file name and the second half is a series of integers.
+    Determine what struct format specifier we need to unpack this data correctly.
+    """
+    int_size = struct.calcsize("I")
+    num_ints = meta_chunk_size / int_size
+
+    if not num_ints.is_integer():
+        raise ValueError(f"Meta data chunk size is not a multiple of {int_size}! Cannot parse file info!")
+
+    num_ints = int(num_ints)
+    return f"{meta_chunk_size}s" + "I" * num_ints
+
+
+def _enumerate_files(pac_contents, file_count, meta_chunk_size):
     """
     Create a list that describes all embedded files included in our PAC file.
     It is a list of tuples that contain the file name, file ID (which is just
@@ -44,9 +61,15 @@ def _enumerate_files(pac_contents, file_count, string_size):
     """
     file_list = []
     remaining = pac_contents
+    fmt = _get_format(meta_chunk_size)
 
     for _ in range(file_count):
-        (file_name, file_id, file_offset, file_size, _), remaining = _unpack_from(f"{string_size}sIIII", remaining)
+        unpacked, remaining = _unpack_from(fmt, remaining)
+
+        file_name = unpacked[0]
+        file_id = unpacked[1]
+        file_offset = unpacked[2]
+        file_size = unpacked[3]
 
         file_name = file_name.rstrip(b"\x00").decode("latin-1")
         file_list.append((file_name, file_id, file_offset, file_size))
@@ -100,8 +123,8 @@ def extract_pac(pac_path, out_dir=None):
     with open(pac_path, "rb") as pac_fp:
         pac_contents = pac_fp.read()
 
-    data_start, string_size, file_count, remaining = _parse_header(pac_contents)
-    file_list, remaining = _enumerate_files(remaining, file_count, string_size)
+    data_start, meta_chunk_size, file_count, remaining = _parse_header(pac_contents)
+    file_list, remaining = _enumerate_files(remaining, file_count, meta_chunk_size)
 
     data_contents = pac_contents[data_start:]
     _extract_files(data_contents, file_list, out_dir)
