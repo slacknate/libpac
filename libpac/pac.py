@@ -76,18 +76,9 @@ def _enumerate_files(pac_contents, file_count, meta_chunk_size):
 def _extract_files(pac_contents, file_list, out_dir):
     """
     Pull our embedded files out of the PAC file data.
-    We ignore the file ID (although we could use it for some more basic validation),
-    as well as the offset seems to be with respect to the start of the PAC file
-    and not with respect to the previous embedded file.
-    However, it is possible that the algorithm implemented here is wrong and
-    eventually well need to use the offset (i.e. not all the files are tightly
-    packed/"right next to" each other) so we keep it around.
     """
-    remaining = pac_contents
-
-    for file_name, _, __, file_size in file_list:
-        file_data = remaining[:file_size]
-        remaining = remaining[file_size:]
+    for file_name, _, file_offset, file_size in file_list:
+        file_data = pac_contents[file_offset:file_offset+file_size]
 
         full_path = os.path.join(out_dir, file_name)
         with open(full_path, "wb") as emb_fp:
