@@ -19,8 +19,6 @@ def _parse_header(pac_contents):
     """
     Parse the header of a PAC file.
     We do basic validation of the header with the PAC_PREFIX constant.
-
-    Reference: https://github.com/dantarion/bbtools/blob/master/pac.py
     """
     if not pac_contents.startswith(PAC_PREFIX):
         raise ValueError("Not a valid PAC file!")
@@ -56,8 +54,6 @@ def _enumerate_files(pac_contents, file_count, meta_chunk_size):
     It is a list of tuples that contain the file name, file ID (which is just
     an index that is incremented with each file), the file offset (where the file
     data starts), and the size of the file.
-
-    Reference: https://github.com/dantarion/bbtools/blob/master/pac.py
     """
     file_list = []
     remaining = pac_contents
@@ -86,8 +82,6 @@ def _extract_files(pac_contents, file_list, out_dir):
     However, it is possible that the algorithm implemented here is wrong and
     eventually well need to use the offset (i.e. not all the files are tightly
     packed/"right next to" each other) so we keep it around.
-
-    Reference: https://github.com/dantarion/bbtools/blob/master/pac.py
     """
     remaining = pac_contents
 
@@ -113,6 +107,8 @@ def _get_out_dir(pac_path):
 def extract_pac(pac_path, out_dir=None):
     """
     Extract the contents of a PAC file, outputting them to a directory.
+
+    Reference: https://github.com/dantarion/bbtools/blob/master/pac.py
     """
     if out_dir is None:
         out_dir = _get_out_dir(pac_path)
