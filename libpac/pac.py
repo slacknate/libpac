@@ -76,10 +76,35 @@ def _enumerate_files(pac_contents, file_count, string_size, entry_size):
     return file_list, remaining
 
 
-def _extract_files(pac_contents, file_list, out_dir):
+def enumerate_pac(pac_path):
+    """
+    Return a list of files contained within a PAC file.
+    """
+    with open(pac_path, "rb") as pac_fp:
+        pac_contents = pac_fp.read()
+
+    _, string_size, file_count, entry_size, remaining = _parse_header(pac_contents)
+    file_list, _ = _enumerate_files(remaining, file_count, string_size, entry_size)
+
+    return file_list
+
+
+def _filter_file_list(extract_filter):
+    """
+    Helper to create a filter function to filter our file list based on an extract filter.
+    """
+    def _filter_func(item):
+        return extract_filter is None or item[0] in extract_filter
+
+    return _filter_func
+
+
+def _extract_files(pac_contents, file_list, out_dir, extract_filter=None):
     """
     Pull our embedded files out of the PAC file data.
     """
+    file_list = filter(_filter_file_list(extract_filter), file_list)
+
     for file_name, _, file_offset, file_size in file_list:
         file_data = pac_contents[file_offset:file_offset+file_size]
 
@@ -98,10 +123,11 @@ def _get_out_dir(pac_path):
     return os.path.join(parent_dir, out_dir)
 
 
-def extract_pac(pac_path, out_dir=None):
+def extract_pac(pac_path, out_dir=None, extract_filter=None):
     """
     Extract the contents of a PAC file, outputting them to a directory.
-
+    We allow for extracing only certain files in the PAC via `extract_filter`.
+    The filter is a set() containing file names found in the PAC file.
     Reference: https://github.com/dantarion/bbtools/blob/master/pac.py
     """
     if out_dir is None:
@@ -117,4 +143,4 @@ def extract_pac(pac_path, out_dir=None):
     file_list, remaining = _enumerate_files(remaining, file_count, string_size, entry_size)
 
     data_contents = pac_contents[data_start:]
-    _extract_files(data_contents, file_list, out_dir)
+    _extract_files(data_contents, file_list, out_dir, extract_filter)
