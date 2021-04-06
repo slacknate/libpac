@@ -4,6 +4,9 @@ import struct
 PAC_PREFIX = b"FPAC"
 PAC_HEADER_SIZE = 32
 
+INT_SIZE = struct.calcsize("I")
+BLOCK_SIZE = 4 * INT_SIZE
+
 
 def _unpack_from(fmt, data):
     """
@@ -41,11 +44,10 @@ def _get_format(string_size, entry_size):
     """
     Get our unpack format based on the string size and entry size.
     """
-    int_size = struct.calcsize("I")
-    num_ints = (entry_size - string_size) / int_size
+    num_ints = (entry_size - string_size) / INT_SIZE
 
     if not num_ints.is_integer():
-        raise ValueError(f"Meta data chunk size is not a multiple of {int_size}! Cannot parse file info!")
+        raise ValueError(f"Meta data chunk size is not a multiple of {INT_SIZE}! Cannot parse file info!")
 
     num_ints = int(num_ints)
     return f"{string_size}s" + "I" * num_ints
@@ -168,27 +170,26 @@ def _parse_file_list(file_list):
 
         total_file_size += file_size
 
-    # Ensure string_size is a multiple of `int_size`.
-    # We need to do this for alignment.
-    int_size = struct.calcsize("I")
-    remainder = string_size % int_size
+    # Ensure string_size is a multiple of `INT_SIZE`. We need to do this for alignment.
+    remainder = string_size % INT_SIZE
     if remainder:
-        string_size += int_size - remainder
+        string_size += INT_SIZE - remainder
 
-    # Not sure if this is correct but currently we only care about file ID, offset, and size during extraction.
-    # So we mimic that logic here and hope for the best.
-    entry_size = struct.calcsize(f"{string_size}sIII")
+    # Ensure string_size is a multiple of `BLOCK_SIZE`. We need to do this for alignment.
+    # It also appears that we need the entry size to be greater than or equal to 2 * `string_size`.
+    entry_size = string_size
+    double_string = 2 * string_size
+    while entry_size < double_string or entry_size % BLOCK_SIZE != 0:
+        entry_size += INT_SIZE
 
     return string_size, file_count, entry_size, total_file_size, parsed_file_list
 
 
-def _build_header(data_start, string_size, file_count, total_file_size):
+def _build_header(total_size, data_start, string_size, file_count):
     """
     Build a valid PAC file header.
     This is the start of our PAC contents.
     """
-    total_size = data_start + total_file_size
-
     # Not sure what these are for but the values seem static.
     unknown_00 = 1
     unknown_01 = 0
@@ -210,7 +211,14 @@ def _build_file_entries(parsed_file_list, string_size, entry_size):
     file_id = 0
     file_offset = 0
     file_entries = b""
+
     fmt = _get_format(string_size, entry_size)
+
+    # We need to align our entry size to certain byte sizes. As such it is very
+    # likely that our data is smaller than the entry size and when that happens we need to
+    # create a null-byte padding to fill in the remaining data.
+    pad_length = entry_size - string_size - (3 * INT_SIZE)
+    pad = (0,) * int(pad_length / INT_SIZE)
 
     for file_name, name_len, file_size in parsed_file_list:
         file_name_bytes = os.path.basename(file_name).encode("latin-1")
@@ -221,7 +229,7 @@ def _build_file_entries(parsed_file_list, string_size, entry_size):
         elif name_len > string_size:
             raise ValueError("Name too long!")
 
-        file_entries += struct.pack(fmt, file_name_bytes, file_id, file_offset, file_size)
+        file_entries += struct.pack(fmt, file_name_bytes, file_id, file_offset, file_size, *pad)
 
         file_offset += file_size
         file_id += 1
@@ -264,10 +272,14 @@ def create_pac(file_dir, out_file=None, create_filter=None):
 
     string_size, file_count, entry_size, total_file_size, parsed_file_list = _parse_file_list(file_list)
     data_start = PAC_HEADER_SIZE + (file_count * entry_size)
+    total_size = data_start + total_file_size
 
-    pac_contents = _build_header(data_start, string_size, file_count, total_file_size)
+    pac_contents = _build_header(total_size, data_start, string_size, file_count)
     pac_contents += _build_file_entries(parsed_file_list, string_size, entry_size)
     pac_contents += _build_file_contents(parsed_file_list)
+
+    if len(pac_contents) != total_size:
+        raise ValueError("Invalid PAC file generated! File size does not match meta data total size!")
 
     if out_file is None:
         parent_dir = os.path.dirname(file_dir)
