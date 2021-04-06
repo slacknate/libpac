@@ -91,21 +91,12 @@ def enumerate_pac(pac_path):
     return file_list
 
 
-def _filter_file_list(extract_filter):
-    """
-    Helper to create a filter function to filter our file list based on an extract filter.
-    """
-    def _filter_func(item):
-        return extract_filter is None or item[0] in extract_filter
-
-    return _filter_func
-
-
 def _extract_files(pac_contents, file_list, out_dir, extract_filter=None):
     """
     Pull our embedded files out of the PAC file data.
     """
-    file_list = filter(_filter_file_list(extract_filter), file_list)
+    if extract_filter is not None:
+        file_list = filter(extract_filter, file_list)
 
     for file_name, _, file_offset, file_size in file_list:
         file_data = pac_contents[file_offset:file_offset+file_size]
@@ -128,10 +119,13 @@ def _get_out_dir(pac_path):
 def extract_pac(pac_path, out_dir=None, extract_filter=None):
     """
     Extract the contents of a PAC file, outputting them to a directory.
-    We allow for extracing only certain files in the PAC via `extract_filter`.
-    The filter is a set() containing file names found in the PAC file.
+    We allow for extracing only certain files in the PAC via `extract_filter`
+    which is a callable object that is a suitable filter() function.
     Reference: https://github.com/dantarion/bbtools/blob/master/pac.py
     """
+    if extract_filter is not None and not callable(extract_filter):
+        raise TypeError("Extract filter must be a callable object suitable to pass to filter()!")
+
     if out_dir is None:
         out_dir = _get_out_dir(pac_path)
 
