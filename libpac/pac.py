@@ -59,11 +59,13 @@ def _enumerate_files(pac_contents, file_count, string_size, entry_size):
     data starts), and the size of the file.
     """
     file_list = []
-    remaining = pac_contents
+    total_entry_size = file_count * entry_size
     fmt = _get_format(string_size, entry_size)
 
-    for _ in range(file_count):
-        unpacked, remaining = _unpack_from(fmt, remaining)
+    for file_index in range(file_count):
+        offset = file_index * entry_size
+        entry_data = pac_contents[offset:offset+entry_size]
+        unpacked = struct.unpack(fmt, entry_data)
 
         file_name = unpacked[0]
         file_id = unpacked[1]
@@ -73,7 +75,7 @@ def _enumerate_files(pac_contents, file_count, string_size, entry_size):
         file_name = file_name.rstrip(b"\x00").decode("latin-1")
         file_list.append((file_name, file_id, file_offset, file_size))
 
-    return file_list, remaining
+    return file_list, pac_contents[total_entry_size:]
 
 
 def enumerate_pac(pac_path):
