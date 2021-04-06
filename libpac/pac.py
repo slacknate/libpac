@@ -140,3 +140,142 @@ def extract_pac(pac_path, out_dir=None, extract_filter=None):
 
     data_contents = pac_contents[data_start:]
     _extract_files(data_contents, file_list, out_dir, extract_filter)
+
+
+def _parse_file_list(file_list):
+    """
+    Parse a file list and determine the values of the the meta data we need
+    in order to create a valid PAC file from the files list.
+    """
+    parsed_file_list = []
+
+    # This is pretty straight forward.
+    file_count = len(file_list)
+
+    # Total size of all files we are putting in the PAC file.
+    total_file_size = 0
+
+    # Set the string size to the length of longest file name in the file list.
+    string_size = 0
+    for file_name in file_list:
+        name_len = len(os.path.basename(file_name))
+
+        if name_len > string_size:
+            string_size = name_len
+
+        file_size = os.path.getsize(file_name)
+        parsed_file_list.append((file_name, name_len, file_size))
+
+        total_file_size += file_size
+
+    # Ensure string_size is a multiple of `int_size`.
+    # We need to do this for alignment.
+    int_size = struct.calcsize("I")
+    remainder = string_size % int_size
+    if remainder:
+        string_size += int_size - remainder
+
+    # Not sure if this is correct but currently we only care about file ID, offset, and size during extraction.
+    # So we mimic that logic here and hope for the best.
+    entry_size = struct.calcsize(f"{string_size}sIII")
+
+    return string_size, file_count, entry_size, total_file_size, parsed_file_list
+
+
+def _build_header(data_start, string_size, file_count, total_file_size):
+    """
+    Build a valid PAC file header.
+    This is the start of our PAC contents.
+    """
+    total_size = data_start + total_file_size
+
+    # Not sure what these are for but the values seem static.
+    unknown_00 = 1
+    unknown_01 = 0
+    unknown_02 = 0
+
+    # Fill in our required prefix and meta data.
+    header = PAC_PREFIX
+    header += struct.pack("III", data_start, total_size, file_count)
+    header += struct.pack("IIII", unknown_00, string_size, unknown_01, unknown_02)
+
+    return header
+
+
+def _build_file_entries(parsed_file_list, string_size, entry_size):
+    """
+    Create a PAC file entry listing based on our provided file list.
+    This will be appended to our PAC contents.
+    """
+    file_id = 0
+    file_offset = 0
+    file_entries = b""
+    fmt = _get_format(string_size, entry_size)
+
+    for file_name, name_len, file_size in parsed_file_list:
+        file_name_bytes = os.path.basename(file_name).encode("latin-1")
+
+        if name_len < string_size:
+            file_name_bytes += b"\x00" * (string_size - name_len)
+
+        elif name_len > string_size:
+            raise ValueError("Name too long!")
+
+        file_entries += struct.pack(fmt, file_name_bytes, file_id, file_offset, file_size)
+
+        file_offset += file_size
+        file_id += 1
+
+    return file_entries
+
+
+def _build_file_contents(parsed_file_list):
+    """
+    Append the contents of all the files in the list together.
+    This will be appended to our PAC contents.
+    """
+    file_contents = b""
+
+    for file_name, _, __ in parsed_file_list:
+        with open(file_name, "rb") as fp:
+            file_contents += fp.read()
+
+    return file_contents
+
+
+def _get_file_list(file_dir):
+    """
+    Helper to get a list of full paths from the given directory.
+    """
+    return [os.path.join(file_dir, file_name) for file_name in os.listdir(file_dir)]
+
+
+def create_pac(file_dir, out_file=None, create_filter=None):
+    """
+    """
+    if create_filter is not None and not callable(create_filter):
+        raise TypeError("Create filter must be a callable object suitable to pass to filter()!")
+
+    if create_filter is not None:
+        file_list = list(filter(create_filter, _get_file_list(file_dir)))
+
+    else:
+        file_list = _get_file_list(file_dir)
+
+    string_size, file_count, entry_size, total_file_size, parsed_file_list = _parse_file_list(file_list)
+    data_start = PAC_HEADER_SIZE + (file_count * entry_size)
+
+    pac_contents = _build_header(data_start, string_size, file_count, total_file_size)
+    pac_contents += _build_file_entries(parsed_file_list, string_size, entry_size)
+    pac_contents += _build_file_contents(parsed_file_list)
+
+    if out_file is None:
+        parent_dir = os.path.dirname(file_dir)
+        pac_file_name = os.path.basename(file_dir) + ".pac"
+        out_file = os.path.join(parent_dir, pac_file_name)
+
+    elif not out_file.endswith(".pac"):
+        raise ValueError("Must have .pac extension for PAC files!")
+
+    with open(out_file, "wb") as pac_fp:
+        pac_fp.write(pac_contents)
