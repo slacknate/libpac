@@ -34,7 +34,7 @@ def _parse_header(pac_contents):
     entry_size = (data_start - PAC_HEADER_SIZE) / file_count
 
     if not entry_size.is_integer():
-        raise ValueError(f"Invalid meta data entry size {entry_size}!")
+        raise ValueError(f"Invalid file entry size {entry_size}!")
 
     entry_size = int(entry_size)
     return data_start, string_size, file_count, entry_size, remaining
@@ -47,7 +47,8 @@ def _get_format(string_size, entry_size):
     num_ints = (entry_size - string_size) / INT_SIZE
 
     if not num_ints.is_integer():
-        raise ValueError(f"Meta data chunk size is not a multiple of {INT_SIZE}! Cannot parse file info!")
+        raise ValueError(f"File entry size mismatch with string size! Entry size or "
+                         f"string size is not a multiple of {INT_SIZE}! Cannot parse file entries!")
 
     num_ints = int(num_ints)
     return f"{string_size}s" + "I" * num_ints
