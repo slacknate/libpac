@@ -176,7 +176,7 @@ def _parse_file_list(file_list):
     if remainder:
         string_size += INT_SIZE - remainder
 
-    # Ensure string_size is a multiple of `BLOCK_SIZE`. We need to do this for alignment.
+    # Ensure entry_size is a multiple of `BLOCK_SIZE`. We need to do this for alignment.
     # It also appears that we need the entry size to be greater than or equal to 2 * `string_size`.
     entry_size = string_size
     double_string = 2 * string_size
