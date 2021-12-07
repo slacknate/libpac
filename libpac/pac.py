@@ -31,7 +31,10 @@ def _parse_header(pac_contents):
 
     (data_start, _, file_count), remaining = _unpack_from("III", remaining)
     (_, string_size, __, ___), remaining = _unpack_from("IIII", remaining)
-    entry_size = (data_start - PAC_HEADER_SIZE) / file_count
+
+    entry_size = 0.0
+    if file_count > 0:
+        entry_size = (data_start - PAC_HEADER_SIZE) / file_count
 
     if not entry_size.is_integer():
         raise ValueError(f"Invalid file entry size {entry_size}!")
