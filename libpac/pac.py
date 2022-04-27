@@ -1,7 +1,9 @@
 import os
+import zlib
 import struct
 
 PAC_PREFIX = b"FPAC"
+COMPRESSED_PAC_PREFIX = b"DFASFPAC"
 PAC_HEADER_SIZE = 32
 
 INT_SIZE = struct.calcsize("I")
@@ -17,6 +19,32 @@ def _unpack_from(fmt, data):
     unpacked = struct.unpack_from(fmt, data)
     remaining = data[offset:]
     return unpacked, remaining
+
+
+def _decompress_pac(pac_contents):
+    """
+    Some files are compressed to save disk space. These are their own file format
+    and need to be specifically handled so that we can decompress the data before further parsing.
+    Reference: https://github.com/super-continent/arcsys/blob/main/src/bbcf/pac.rs
+    """
+    remaining = pac_contents[len(COMPRESSED_PAC_PREFIX):]
+    (uncompressed_size, compressed_size), remaining = _unpack_from("II", remaining)
+    return uncompressed_size, compressed_size, zlib.decompress(remaining)
+
+
+def _read_pac(pac_path):
+    """
+    Read a PAC file. We detect the compressed PAC format and
+    automatically decompress the data so we always return uncompressed PAC contents.
+    """
+    with open(pac_path, "rb") as pac_fp:
+        pac_contents = pac_fp.read()
+
+    # Do we need to do anything with the uncompressed and compressed sizes?
+    if pac_contents.startswith(COMPRESSED_PAC_PREFIX):
+        _, __, pac_contents = _decompress_pac(pac_contents)
+
+    return pac_contents
 
 
 def _parse_header(pac_contents):
@@ -39,8 +67,7 @@ def _parse_header(pac_contents):
     if not entry_size.is_integer():
         raise ValueError(f"Invalid file entry size {entry_size}!")
 
-    entry_size = int(entry_size)
-    return data_start, string_size, file_count, entry_size, remaining
+    return data_start, string_size, file_count, int(entry_size), remaining
 
 
 def _get_format(string_size, entry_size):
@@ -88,8 +115,7 @@ def enumerate_pac(pac_path):
     """
     Return a list of files contained within a PAC file.
     """
-    with open(pac_path, "rb") as pac_fp:
-        pac_contents = pac_fp.read()
+    pac_contents = _read_pac(pac_path)
 
     _, string_size, file_count, entry_size, remaining = _parse_header(pac_contents)
     file_list, _ = _enumerate_files(remaining, file_count, string_size, entry_size)
@@ -138,8 +164,7 @@ def extract_pac(pac_path, out_dir=None, extract_filter=None):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
-    with open(pac_path, "rb") as pac_fp:
-        pac_contents = pac_fp.read()
+    pac_contents = _read_pac(pac_path)
 
     data_start, string_size, file_count, entry_size, remaining = _parse_header(pac_contents)
     file_list, remaining = _enumerate_files(remaining, file_count, string_size, entry_size)
